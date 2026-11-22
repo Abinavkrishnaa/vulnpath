@@ -1,16 +1,19 @@
 [project]
 name = "vulnpath-schema"
-version = "0.0.1"
+version = "0.1.0"
 description = "Shared data models and JSON Schemas for Vulnpath"
+authors = [{ name = "Abinavkrishnaa" }]
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
 dependencies = ["pydantic>=2.9,<3"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
     "Programming Language :: Python :: 3",
     "Topic :: Security",
 ]
+
+[project.urls]
+Repository = "https://github.com/Abinavkrishnaa/vulnpath"
 
 [build-system]
 requires = ["hatchling>=1.25"]

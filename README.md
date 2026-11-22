@@ -3,7 +3,7 @@
 **Does your code actually call the vulnerable function?** Vulnpath answers that for every
 dependency vulnerability alert in a Python project, and shows its evidence.
 
-> Status: early development (milestone M0/M1). Not ready for production use yet.
+> Status: **alpha** (v0.1.0). Core pipeline works end-to-end. See [releases](https://github.com/Abinavkrishnaa/vulnpath/releases) for the latest version.
 
 ## What it does
 
