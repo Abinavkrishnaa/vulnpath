@@ -163,7 +163,7 @@ def scan(
     for warning in ds.warnings:
         typer.echo(f"warning: {warning}", err=True)
 
-    report = run_scan(inv, ds.records)
+    report = run_scan(inv, ds.records, project_root=path)
 
     if output is OutputFormat.JSON:
         typer.echo(report.model_dump_json(indent=2))
