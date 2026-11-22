@@ -32,9 +32,7 @@ def _collect_blockers(analyses: list[FileAnalysis]) -> list[Blocker]:
     blockers: list[Blocker] = []
     for a in analyses:
         if a.error:
-            blockers.append(
-                Blocker(kind=BlockerKind.PARSE_ERROR, file=str(a.path), detail=a.error)
-            )
+            blockers.append(Blocker(kind=BlockerKind.PARSE_ERROR, file=str(a.path), detail=a.error))
         for dyn in a.dynamic_uses:
             kind = BlockerKind.EVAL_EXEC if dyn.kind == "eval_exec" else BlockerKind.DYNAMIC_IMPORT
             blockers.append(Blocker(kind=kind, file=dyn.file, line=dyn.line, detail=dyn.detail))

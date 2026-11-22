@@ -19,7 +19,7 @@ from vulnpath.cache import cached_dataset_path, dataset_is_cached
 from vulnpath.inputs import LockfileNotFoundError, discover_lockfile, load_lockfile
 from vulnpath.inputs.discover import UnsupportedLockfileError
 from vulnpath.scanner import scan as run_scan
-from vulnpath_schema.findings import Report, Verdict
+from vulnpath_schema.findings import Finding, Report, Verdict
 
 EXIT_OK = 0
 EXIT_REACHABLE = 1
@@ -178,8 +178,7 @@ def scan(
         return
 
     typer.echo("")
-    for f in report.findings:
-        typer.echo(f"  {f.package}=={f.version}  {f.advisory}  {f.verdict.value}")
+    _print_findings(report.findings, path)
 
     n_reachable = sum(1 for f in report.findings if f.verdict is Verdict.REACHABLE)
     n_not_reachable = sum(1 for f in report.findings if f.verdict is Verdict.NOT_REACHABLE)
@@ -192,6 +191,31 @@ def scan(
 
     if n_reachable:
         raise typer.Exit(EXIT_REACHABLE)
+
+
+def _rel(file: str, root: Path) -> str:
+    """Return file relative to root with forward slashes; fallback to original."""
+    try:
+        return str(Path(file).resolve().relative_to(root.resolve())).replace("\\", "/")
+    except ValueError:
+        return file
+
+
+def _print_findings(findings: tuple[Finding, ...], root: Path) -> None:
+    for f in findings:
+        typer.echo(f"  {f.package}=={f.version}  {f.advisory}  {f.verdict.value}")
+        if f.verdict is Verdict.REACHABLE:
+            for hop in f.path:
+                typer.echo(f"    └─ {_rel(hop.file, root)}:{hop.line}  {hop.qualname}")
+        elif f.verdict is Verdict.NOT_REACHABLE and f.basis:
+            typer.echo(f"       ({f.basis.value.replace('_', ' ')})")
+        elif f.verdict is Verdict.UNKNOWN:
+            for b in f.blockers[:2]:
+                if b.file:
+                    loc = f"  {_rel(b.file, root)}" + (f":{b.line}" if b.line else "")
+                    typer.echo(f"    ! {b.kind.value}{loc}")
+                else:
+                    typer.echo(f"       ({b.detail or b.kind.value})")
 
 
 def _has_reachable(report: Report) -> bool:
