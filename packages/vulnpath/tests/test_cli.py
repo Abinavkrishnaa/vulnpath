@@ -1,9 +1,11 @@
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 from typer.testing import CliRunner
 
 from vulnpath import __version__
+from vulnpath.advisories.fetch import DownloadError
 from vulnpath.cli.main import app
 from vulnpath_schema.dataset import DatasetRecord, RecordStatus
 from vulnpath_schema.osv import AffectedRange, RangeEvent, RangeType
@@ -140,3 +142,73 @@ def test_scan_explicit_lockfile(tmp_path: Path) -> None:
     result = runner.invoke(app, ["scan", "--lockfile", str(lock), "--dataset", str(ds)])
     assert result.exit_code == 0
     assert "requests==2.0.0" in result.stdout
+
+
+def test_scan_uses_cached_dataset(tmp_path: Path) -> None:
+    _requirements(tmp_path, "requests==2.0.0\n")
+    ds = _dataset(tmp_path / "ds")
+    with (
+        patch("vulnpath.cli.main.cached_dataset_path", return_value=ds),
+        patch("vulnpath.cli.main.dataset_is_cached", return_value=True),
+    ):
+        result = runner.invoke(app, ["scan", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "requests==2.0.0" in result.stdout
+
+
+def test_scan_no_dataset_no_cache_is_tool_error(tmp_path: Path) -> None:
+    _requirements(tmp_path)
+    with patch("vulnpath.cli.main.dataset_is_cached", return_value=False):
+        result = runner.invoke(app, ["scan", str(tmp_path)])
+    assert result.exit_code == 2
+    assert "vulnpath update" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# update
+# ---------------------------------------------------------------------------
+
+
+def test_update_downloads_and_reports_record_count(tmp_path: Path) -> None:
+    ds = _dataset(tmp_path / "ds")
+
+    def _fake_download(url: str, dest: Path) -> None:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(ds.read_bytes())
+
+    cache = tmp_path / "cache" / "dataset.jsonl"
+    with (
+        patch("vulnpath.cli.main.download_dataset", side_effect=_fake_download),
+        patch("vulnpath.cli.main.cached_dataset_path", return_value=cache),
+    ):
+        result = runner.invoke(app, ["update"])
+    assert result.exit_code == 0
+    assert "1 records" in result.stdout
+    assert "saved to" in result.stdout
+
+
+def test_update_shows_fetching_url(tmp_path: Path) -> None:
+    ds = _dataset(tmp_path / "ds")
+
+    def _fake_download(url: str, dest: Path) -> None:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(ds.read_bytes())
+
+    cache = tmp_path / "cache" / "dataset.jsonl"
+    with (
+        patch("vulnpath.cli.main.download_dataset", side_effect=_fake_download),
+        patch("vulnpath.cli.main.cached_dataset_path", return_value=cache),
+    ):
+        result = runner.invoke(app, ["update", "--url", "https://example.com/data.jsonl"])
+    assert "https://example.com/data.jsonl" in result.stdout
+
+
+def test_update_download_error_is_tool_error(tmp_path: Path) -> None:
+    cache = tmp_path / "cache" / "dataset.jsonl"
+    with (
+        patch("vulnpath.cli.main.download_dataset", side_effect=DownloadError("HTTP 404")),
+        patch("vulnpath.cli.main.cached_dataset_path", return_value=cache),
+    ):
+        result = runner.invoke(app, ["update"])
+    assert result.exit_code == 2
+    assert "HTTP 404" in result.stderr

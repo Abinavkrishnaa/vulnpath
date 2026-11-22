@@ -8,11 +8,19 @@ from typing import Annotated
 import typer
 
 from vulnpath import __version__
-from vulnpath.advisories import DatasetLoadError, load_dataset
+from vulnpath.advisories import (
+    DATASET_URL,
+    DatasetLoadError,
+    DownloadError,
+    download_dataset,
+    load_dataset,
+)
+from vulnpath.cache import cached_dataset_path, dataset_is_cached
 from vulnpath.inputs import LockfileNotFoundError, discover_lockfile, load_lockfile
 from vulnpath.inputs.discover import UnsupportedLockfileError
 from vulnpath.scanner import scan as run_scan
-from vulnpath_schema.findings import Report, Verdict
+from vulnpath_schema.findings import Finding, Report, Verdict
+
 
 EXIT_OK = 0
 EXIT_REACHABLE = 1
@@ -87,11 +95,39 @@ def inventory(
 
 
 @app.command()
+def update(
+    url: Annotated[
+        str,
+        typer.Option("--url", help="Dataset URL (default: latest GitHub release)."),
+    ] = DATASET_URL,
+) -> None:
+    """Download the latest vulnerability dataset to the local cache."""
+    dest = cached_dataset_path()
+    typer.echo(f"Fetching {url}")
+    try:
+        download_dataset(url, dest)
+    except DownloadError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_TOOL_ERROR) from exc
+
+    try:
+        ds = load_dataset(dest)
+    except DatasetLoadError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_TOOL_ERROR) from exc
+
+    for warning in ds.warnings:
+        typer.echo(f"warning: {warning}", err=True)
+    typer.echo(f"{len(ds.records)} records saved to {dest}")
+
+
+@app.command()
 def scan(
     path: Annotated[Path, typer.Argument(help="Project directory.")] = Path(),
     dataset: Annotated[
-        Path, typer.Option("--dataset", help="Path to vulnpath dataset JSONL file.")
-    ] = ...,  # type: ignore[assignment]
+        Path | None,
+        typer.Option("--dataset", help="Dataset JSONL (default: cache from 'vulnpath update')."),
+    ] = None,
     lockfile: Annotated[
         Path | None, typer.Option("--lockfile", help="Use this lockfile instead of discovery.")
     ] = None,
@@ -100,6 +136,16 @@ def scan(
     ),
 ) -> None:
     """Scan dependencies for known vulnerabilities."""
+    dataset_path = (
+        dataset if dataset is not None else (cached_dataset_path() if dataset_is_cached() else None)
+    )
+    if dataset_path is None:
+        typer.echo(
+            "error: no dataset found; run 'vulnpath update' first, or pass --dataset PATH",
+            err=True,
+        )
+        raise typer.Exit(EXIT_TOOL_ERROR)
+
     try:
         chosen = lockfile if lockfile is not None else discover_lockfile(path)
         inv = load_lockfile(chosen)
@@ -108,7 +154,7 @@ def scan(
         raise typer.Exit(EXIT_TOOL_ERROR) from exc
 
     try:
-        ds = load_dataset(dataset)
+        ds = load_dataset(dataset_path)
     except DatasetLoadError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(EXIT_TOOL_ERROR) from exc
@@ -118,7 +164,7 @@ def scan(
     for warning in ds.warnings:
         typer.echo(f"warning: {warning}", err=True)
 
-    report = run_scan(inv, ds.records)
+    report = run_scan(inv, ds.records, project_root=path)
 
     if output is OutputFormat.JSON:
         typer.echo(report.model_dump_json(indent=2))
@@ -133,8 +179,7 @@ def scan(
         return
 
     typer.echo("")
-    for f in report.findings:
-        typer.echo(f"  {f.package}=={f.version}  {f.advisory}  {f.verdict.value}")
+    _print_findings(report.findings, path)
 
     n_reachable = sum(1 for f in report.findings if f.verdict is Verdict.REACHABLE)
     n_not_reachable = sum(1 for f in report.findings if f.verdict is Verdict.NOT_REACHABLE)
@@ -147,6 +192,31 @@ def scan(
 
     if n_reachable:
         raise typer.Exit(EXIT_REACHABLE)
+
+
+def _rel(file: str, root: Path) -> str:
+    """Return file relative to root with forward slashes; fallback to original."""
+    try:
+        return str(Path(file).resolve().relative_to(root.resolve())).replace("\\", "/")
+    except ValueError:
+        return file
+
+
+def _print_findings(findings: tuple[Finding, ...], root: Path) -> None:
+    for f in findings:
+        typer.echo(f"  {f.package}=={f.version}  {f.advisory}  {f.verdict.value}")
+        if f.verdict is Verdict.REACHABLE:
+            for hop in f.path:
+                typer.echo(f"    └─ {_rel(hop.file, root)}:{hop.line}  {hop.qualname}")
+        elif f.verdict is Verdict.NOT_REACHABLE and f.basis:
+            typer.echo(f"       ({f.basis.value.replace('_', ' ')})")
+        elif f.verdict is Verdict.UNKNOWN:
+            for b in f.blockers[:2]:
+                if b.file:
+                    loc = f"  {_rel(b.file, root)}" + (f":{b.line}" if b.line else "")
+                    typer.echo(f"    ! {b.kind.value}{loc}")
+                else:
+                    typer.echo(f"       ({b.detail or b.kind.value})")
 
 
 def _has_reachable(report: Report) -> bool:
