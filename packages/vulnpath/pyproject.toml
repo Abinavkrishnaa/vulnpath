@@ -1,7 +1,6 @@
 [project]
 name = "vulnpath"
 version = "0.1.0"
-version = "0.1.0"
 description = "Does your code actually call the vulnerable function? Evidence-backed vulnerability reachability for Python."
 authors = [{ name = "Abinavkrishnaa R" }]
 readme = "README.md"
@@ -27,11 +26,6 @@ classifiers = [
     "Topic :: Security",
     "Topic :: Software Development :: Quality Assurance",
 ]
-
-[project.urls]
-Repository = "https://github.com/Abinavkrishnaa/vulnpath"
-"Bug Tracker" = "https://github.com/Abinavkrishnaa/vulnpath/issues"
-Changelog = "https://github.com/Abinavkrishnaa/vulnpath/releases"
 
 [project.urls]
 Repository = "https://github.com/Abinavkrishnaa/vulnpath"

@@ -1,7 +1,6 @@
 [project]
 name = "vulnpath-schema"
 version = "0.1.0"
-version = "0.1.0"
 description = "Shared data models and JSON Schemas for Vulnpath"
 authors = [{ name = "Abinavkrishnaa" }]
 readme = "README.md"
@@ -12,9 +11,6 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Security",
 ]
-
-[project.urls]
-Repository = "https://github.com/Abinavkrishnaa/vulnpath"
 
 [project.urls]
 Repository = "https://github.com/Abinavkrishnaa/vulnpath"
