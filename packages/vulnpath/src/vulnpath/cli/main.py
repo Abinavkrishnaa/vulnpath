@@ -8,7 +8,14 @@ from typing import Annotated
 import typer
 
 from vulnpath import __version__
-from vulnpath.advisories import DatasetLoadError, load_dataset
+from vulnpath.advisories import (
+    DATASET_URL,
+    DatasetLoadError,
+    DownloadError,
+    download_dataset,
+    load_dataset,
+)
+from vulnpath.cache import cached_dataset_path, dataset_is_cached
 from vulnpath.inputs import LockfileNotFoundError, discover_lockfile, load_lockfile
 from vulnpath.inputs.discover import UnsupportedLockfileError
 from vulnpath.scanner import scan as run_scan
@@ -87,11 +94,39 @@ def inventory(
 
 
 @app.command()
+def update(
+    url: Annotated[
+        str,
+        typer.Option("--url", help="Dataset URL (default: latest GitHub release)."),
+    ] = DATASET_URL,
+) -> None:
+    """Download the latest vulnerability dataset to the local cache."""
+    dest = cached_dataset_path()
+    typer.echo(f"Fetching {url}")
+    try:
+        download_dataset(url, dest)
+    except DownloadError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_TOOL_ERROR) from exc
+
+    try:
+        ds = load_dataset(dest)
+    except DatasetLoadError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_TOOL_ERROR) from exc
+
+    for warning in ds.warnings:
+        typer.echo(f"warning: {warning}", err=True)
+    typer.echo(f"{len(ds.records)} records saved to {dest}")
+
+
+@app.command()
 def scan(
     path: Annotated[Path, typer.Argument(help="Project directory.")] = Path(),
     dataset: Annotated[
-        Path, typer.Option("--dataset", help="Path to vulnpath dataset JSONL file.")
-    ] = ...,  # type: ignore[assignment]
+        Path | None,
+        typer.Option("--dataset", help="Dataset JSONL (default: cache from 'vulnpath update')."),
+    ] = None,
     lockfile: Annotated[
         Path | None, typer.Option("--lockfile", help="Use this lockfile instead of discovery.")
     ] = None,
@@ -100,6 +135,16 @@ def scan(
     ),
 ) -> None:
     """Scan dependencies for known vulnerabilities."""
+    dataset_path = (
+        dataset if dataset is not None else (cached_dataset_path() if dataset_is_cached() else None)
+    )
+    if dataset_path is None:
+        typer.echo(
+            "error: no dataset found; run 'vulnpath update' first, or pass --dataset PATH",
+            err=True,
+        )
+        raise typer.Exit(EXIT_TOOL_ERROR)
+
     try:
         chosen = lockfile if lockfile is not None else discover_lockfile(path)
         inv = load_lockfile(chosen)
@@ -108,7 +153,7 @@ def scan(
         raise typer.Exit(EXIT_TOOL_ERROR) from exc
 
     try:
-        ds = load_dataset(dataset)
+        ds = load_dataset(dataset_path)
     except DatasetLoadError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(EXIT_TOOL_ERROR) from exc
