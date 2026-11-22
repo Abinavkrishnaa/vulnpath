@@ -21,6 +21,7 @@ from vulnpath.inputs.discover import UnsupportedLockfileError
 from vulnpath.scanner import scan as run_scan
 from vulnpath_schema.findings import Finding, Report, Verdict
 
+
 EXIT_OK = 0
 EXIT_REACHABLE = 1
 EXIT_TOOL_ERROR = 2
